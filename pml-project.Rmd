@@ -1,0 +1,98 @@
+---
+Title: "PML project write-up"
+---
+
+```{r echo = F, message = F}
+library(caret)
+library(randomForest)
+```
+
+## Read data & preprocessing
+We load the dat into memory and remove NAs and blank cells (columns). We preprocess both training and testing data in order to have correct output. Also manually remove columns that do not contribute to the classification process.         
+
+```{r}
+#load data
+raw <-read.csv("pml-training.csv",na.strings=c("NA",""))
+rawval <-read.csv("pml-testing.csv",na.strings=c("NA",""))
+
+#delete columns with NAs
+train <-raw[, !apply( raw , 2 , function(x){any(is.na(x))})]
+valid <-rawval[, !apply(rawval,2,function(x){any(is.na(x))})]
+
+remIndex <-grep("timestamp|X|user_name|new_window",names(train))
+train <-train[-remIndex]
+valid <-valid[-remIndex]
+
+dim(train)
+dim(valid)
+```
+
+## Data partition and model tuning
+Let's partition the train data into training and testing datasets with ratio 70% and 30% respectively.        
+
+```{r}
+set.seed(32343)
+inTrain <-createDataPartition(y=train$classe,p=0.7,list=FALSE)
+training <-train[inTrain,]
+testing <-train[-inTrain,]
+```
+
+We are going to create 3 different models and validate them   against the 20 testing use cases. 
+
+First, some model tuning. Set up a 10-fold cross-validation.
+
+```{r}
+fitControl <-trainControl(method="cv",number=10)
+
+```
+
+## Model training
+
+Now let's train and build our three different models
+
+```{r}
+#logistic regression with boosting model
+set.seed(32343)
+model.logregboot <- train(classe~.,method="LogitBoost",data=training, trControl=fitControl)
+pr.logregboot <-predict(model.logregboot, newdata=testing)
+cm.logreg <- confusionMatrix(pr.logregboot,testing$classe)
+
+#SVM 
+set.seed(32343)
+model.svm <-suppressWarnings(train(classe~.,data=training, method="svmRadialCost", trControl=fitControl))
+pr.svm <-predict(model.svm, newdata=testing)
+cm.cvm <-confusionMatrix(pr.svm, testing$classe)
+
+
+#tree
+set.seed(32343)
+model.tree <-train(classe~.,method="rpart", data=training, trControl=fitControl)
+pr.tree <-predict(model.tree,newdata=testing)
+cm.tree <-confusionMatrix(pr.tree,testing$classe)
+```
+
+In terms of accuracy, for each model we have:
+-**Logistic Regression model:** `r cm.logreg$overall[1]`
+-**SVM model**: `r cm.cvm$overall[1]`
+-**CART model**:`r cm.tree$overall[1]`
+
+The tree shows reduced accuracy compared to the first two models.
+
+## Model evaluation
+
+Evaluate the three models and generate the comparison table accuracy.  
+        
+```{r}
+#valid1 <-predict(model.treebag,valid)
+validlogregboot <-predict(model.logregboot,valid)
+validsvm <-predict(model.svm,valid)
+validtree <-predict(model.tree,valid)
+
+summa <-data.frame(validlogregboot,validsvm,validtree)
+summa
+```
+
+## Results 
+
+We see that except from problem_ids 3,8 and 18, the choice of the correct class is pretty straight forward. 
+Going with the SVM results, the submission reached 19 out of 20 correct prediction.    
